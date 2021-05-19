@@ -1,22 +1,24 @@
 mod agents;
 
-use agents::count::{CountStore, Request};
+use agents::universe::{Request as UniverseRequest, UniverseStore};
+use std::time::Duration;
 use yew::prelude::*;
+use yew::services::interval::{IntervalService, IntervalTask};
 use yew::services::ConsoleService;
 use yewtil::store::{Bridgeable, ReadOnly, StoreWrapper};
 
 enum Msg {
-    AddOne,
-    SubtractOne,
-    CountStoreMsg(ReadOnly<CountStore>),
+    RenderLoopTick,
+    UniverseStoreMsg(ReadOnly<UniverseStore>),
 }
 
 struct Model {
     // `ComponentLink` is like a reference to a component.
     // It can be used to send messages to the component.
     link: ComponentLink<Self>,
-    count: i64,
-    count_store: Box<dyn Bridge<StoreWrapper<CountStore>>>,
+    cells: String,
+    universe_store: Box<dyn Bridge<StoreWrapper<UniverseStore>>>,
+    _task: IntervalTask,
 }
 
 impl Component for Model {
@@ -24,33 +26,27 @@ impl Component for Model {
     type Properties = ();
 
     fn create(_props: Self::Properties, link: ComponentLink<Self>) -> Self {
-        let callback = link.callback(Msg::CountStoreMsg);
+        let render_loop = link.callback(|_| Msg::RenderLoopTick);
+        let callback = link.callback(Msg::UniverseStoreMsg);
         Self {
             link,
-            count: 0,
-            count_store: CountStore::bridge(callback),
+            cells: String::from(""),
+            universe_store: UniverseStore::bridge(callback),
+            _task: IntervalService::spawn(Duration::from_millis(1), render_loop),
         }
     }
 
     fn update(&mut self, msg: Self::Message) -> ShouldRender {
         match msg {
-            Msg::AddOne => {
-                self.count_store.send(Request::Increment);
+            Msg::RenderLoopTick => {
+                ConsoleService::log("Render Loop");
+                self.universe_store.send(UniverseRequest::Tick);
                 false
             }
-            Msg::SubtractOne => {
-                self.count_store.send(Request::Decrement);
-                false
-            }
-            Msg::CountStoreMsg(state) => {
-                ConsoleService::log("Received Update");
+            Msg::UniverseStoreMsg(state) => {
                 let state = state.borrow();
-                if state.count != self.count {
-                    self.count = state.count;
-                    true
-                } else {
-                    false
-                }
+                self.cells = state.universe.render();
+                true
             }
         }
     }
@@ -65,9 +61,7 @@ impl Component for Model {
     fn view(&self) -> Html {
         html! {
             <div>
-                <button onclick=self.link.callback(|_| Msg::AddOne)>{ "+1" }</button>
-                <button onclick=self.link.callback(|_| Msg::SubtractOne)>{ "-1" }</button>
-                <p>{ self.count }</p>
+                <pre id="game-of-life-canvas">{&self.cells}</pre>
             </div>
         }
     }
